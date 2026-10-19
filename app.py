@@ -1,7 +1,5 @@
 import socket
 import time
-import sqlite3
-import statistics
 from datetime import datetime
 
 import pandas as pd
@@ -13,419 +11,527 @@ st.set_page_config(
     layout="wide"
 )
 
-DB_PATH = "netqos_history.db"
+COLUMNS = [
+    "timestamp", "host", "port", "attempts", "successes",
+    "failures", "success_rate", "avg_latency", "min_latency",
+    "max_latency", "jitter", "status", "message"
+]
+
+if "results" not in st.session_state:
+    st.session_state.results = pd.DataFrame(columns=COLUMNS)
+
+if "alerts" not in st.session_state:
+    st.session_state.alerts = []
 
 
-def init_db():
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tested_at TEXT,
-                host TEXT,
-                port INTEGER,
-                attempts INTEGER,
-                successes INTEGER,
-                failures INTEGER,
-                avg_latency REAL,
-                min_latency REAL,
-                max_latency REAL,
-                jitter REAL,
-                success_rate REAL,
-                health_score REAL
-            )
-        """)
+def tcp_probe(host, port, timeout):
+    start = time.perf_counter()
+
+    try:
+        with socket.create_connection(
+            (host, port), timeout=timeout
+        ):
+            elapsed = (time.perf_counter() - start) * 1000
+
+        return True, round(elapsed, 2), "Connection successful"
+
+    except socket.gaierror:
+        return False, None, "Hostname could not be resolved"
+
+    except socket.timeout:
+        return False, None, "Connection timed out"
+
+    except OSError as error:
+        return False, None, str(error)[:150]
 
 
-def save_result(result):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
-            INSERT INTO history (
-                tested_at, host, port, attempts, successes,
-                failures, avg_latency, min_latency, max_latency,
-                jitter, success_rate, health_score
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            result["tested_at"], result["host"], result["port"],
-            result["attempts"], result["successes"],
-            result["failures"], result["avg_latency"],
-            result["min_latency"], result["max_latency"],
-            result["jitter"], result["success_rate"],
-            result["health_score"]
-        ))
+def test_host(host, port, attempts, timeout):
+    latencies = []
+    errors = []
+    successes = 0
 
-
-def load_history():
-    with sqlite3.connect(DB_PATH) as conn:
-        return pd.read_sql_query(
-            "SELECT * FROM history ORDER BY id DESC",
-            conn
+    for _ in range(attempts):
+        ok, latency, message = tcp_probe(
+            host, port, timeout
         )
 
+        if ok:
+            successes += 1
+            latencies.append(latency)
+        else:
+            errors.append(message)
 
-def valid_host(host):
-    return (
-        bool(host)
-        and len(host) <= 253
-        and "://" not in host
-        and "/" not in host
-        and not any(c.isspace() for c in host)
+        time.sleep(0.08)
+
+    failures = attempts - successes
+    success_rate = successes / attempts * 100
+
+    avg_latency = (
+        round(sum(latencies) / len(latencies), 2)
+        if latencies else None
     )
 
+    min_latency = min(latencies) if latencies else None
+    max_latency = max(latencies) if latencies else None
 
-def tcp_test(host, port, attempts, timeout):
-    samples = []
-    rows = []
-
-    for number in range(attempts):
-        start = time.perf_counter()
-        error = ""
-
-        try:
-            with socket.create_connection(
-                (host, port), timeout=timeout
-            ):
-                success = True
-        except OSError as exc:
-            success = False
-            error = str(exc)
-
-        elapsed = (time.perf_counter() - start) * 1000
-
-        if success:
-            samples.append(elapsed)
-
-        rows.append({
-            "Attempt": number + 1,
-            "Status": "Success" if success else "Failed",
-            "TCP connection time (ms)": round(elapsed, 2),
-            "Error": error
-        })
-
-        if number < attempts - 1:
-            time.sleep(0.15)
-
-    successes = len(samples)
-    failures = attempts - successes
-    avg = statistics.mean(samples) if samples else None
-    minimum = min(samples) if samples else None
-    maximum = max(samples) if samples else None
+    changes = [
+        abs(latencies[i] - latencies[i - 1])
+        for i in range(1, len(latencies))
+    ]
 
     jitter = (
-        statistics.mean(
-            abs(samples[i] - samples[i - 1])
-            for i in range(1, len(samples))
-        )
-        if len(samples) > 1 else (0.0 if samples else None)
+        round(sum(changes) / len(changes), 2)
+        if changes else 0.0
     )
 
-    rate = successes / attempts * 100
-
-    if avg is None:
-        score = 0.0
+    if successes == attempts:
+        status = "Healthy"
+        message = "All probes succeeded"
+    elif successes > 0:
+        status = "Warning"
+        message = errors[0] if errors else "Some probes failed"
     else:
-        latency_score = max(0, 100 - min(avg, 500) / 5)
-        jitter_score = max(0, 100 - min(jitter or 0, 100))
-        score = round(
-            0.5 * rate + 0.3 * latency_score + 0.2 * jitter_score,
-            1
-        )
+        status = "Down"
+        message = errors[0] if errors else "All probes failed"
 
-    result = {
-        "tested_at": datetime.now().astimezone().isoformat(
-            timespec="seconds"
+    return {
+        "timestamp": datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
         ),
         "host": host,
         "port": port,
-        "attempts": attempts,
-        "successes": successes,
-        "failures": failures,
-        "avg_latency": round(avg, 2) if avg is not None else None,
-        "min_latency": round(minimum, 2) if minimum is not None else None,
-        "max_latency": round(maximum, 2) if maximum is not None else None,
-        "jitter": round(jitter, 2) if jitter is not None else None,
-        "success_rate": round(rate, 1),
-        "health_score": score
+        "attempts": int(attempts),
+        "successes": int(successes),
+        "failures": int(failures),
+        "success_rate": round(success_rate, 1),
+        "avg_latency": avg_latency,
+        "min_latency": min_latency,
+        "max_latency": max_latency,
+        "jitter": jitter,
+        "status": status,
+        "message": message
     }
 
-    return result, pd.DataFrame(rows)
 
+def add_alerts(rows, latency_limit, jitter_limit):
+    for row in rows:
+        if row["status"] == "Down":
+            st.session_state.alerts.append({
+                "timestamp": row["timestamp"],
+                "severity": "Critical",
+                "host": row["host"],
+                "message": "All connection attempts failed"
+            })
 
-def dns_diagnostic(host):
-    start = time.perf_counter()
-    try:
-        addresses = sorted({
-            item[4][0]
-            for item in socket.getaddrinfo(host, None)
-        })
-        elapsed = (time.perf_counter() - start) * 1000
-        return addresses, round(elapsed, 2), None
-    except OSError as exc:
-        elapsed = (time.perf_counter() - start) * 1000
-        return [], round(elapsed, 2), str(exc)
+        elif row["status"] == "Warning":
+            st.session_state.alerts.append({
+                "timestamp": row["timestamp"],
+                "severity": "Warning",
+                "host": row["host"],
+                "message": "Some connection attempts failed"
+            })
 
+        if (
+            row["avg_latency"] is not None
+            and row["avg_latency"] > latency_limit
+        ):
+            st.session_state.alerts.append({
+                "timestamp": row["timestamp"],
+                "severity": "Warning",
+                "host": row["host"],
+                "message": "Latency exceeded the configured threshold"
+            })
 
-init_db()
+        if row["jitter"] > jitter_limit:
+            st.session_state.alerts.append({
+                "timestamp": row["timestamp"],
+                "severity": "Warning",
+                "host": row["host"],
+                "message": "Latency variation exceeded the threshold"
+            })
+
+    st.session_state.alerts = st.session_state.alerts[-500:]
+
 
 st.title("📡 NetQoS Monitor")
 st.caption("Network Quality of Service Monitoring System")
+
 st.info(
     "Tests run from the cloud server hosting this app, "
-    "not directly from your laptop's Wi-Fi."
+    "not directly from your laptop's Wi-Fi. "
+    "TCP connection time is not the same as an ICMP ping."
 )
 
 with st.sidebar:
     st.header("⚙️ Test settings")
+
     host_text = st.text_area(
         "Hostnames (one per line)",
-        "google.com\ncloudflare.com"
+        value="google.com\ncloudflare.com",
+        height=90
     )
+
     port = st.number_input(
-        "TCP port", min_value=1, max_value=65535, value=443
+        "TCP port",
+        min_value=1,
+        max_value=65535,
+        value=443
     )
+
     attempts = st.slider(
-        "Attempts per host", 3, 30, 10
+        "Attempts per host", 1, 30, 10
     )
+
     timeout = st.slider(
-        "Connection timeout (seconds)", 1, 8, 3
+        "Connection timeout (seconds)", 1, 10, 3
     )
+
     latency_limit = st.slider(
-        "Latency alert threshold (ms)", 10, 1000, 150, step=10
+        "Latency alert threshold (ms)",
+        10, 2000, 150, step=10
     )
+
     jitter_limit = st.slider(
-        "Jitter alert threshold (ms)", 1, 200, 30
+        "Jitter alert threshold (ms)",
+        1, 500, 30
     )
 
-hosts = list(dict.fromkeys(
-    line.strip() for line in host_text.splitlines()
-    if line.strip()
-))[:10]
+    run_test = st.button(
+        "▶ Run live test",
+        type="primary",
+        use_container_width=True
+    )
 
-dashboard, diagnostics, history_tab, reports, about = st.tabs([
+hosts = []
+
+for line in host_text.splitlines():
+    host = line.strip()
+
+    if not host or host in hosts:
+        continue
+
+    if "://" in host or "/" in host or " " in host:
+        st.sidebar.warning(f"Invalid hostname skipped: {host}")
+    else:
+        hosts.append(host)
+
+dashboard, diagnostics, history, reports, about = st.tabs([
     "📊 Dashboard",
-    "🧭 Diagnostics",
+    "🩺 Diagnostics",
     "🕘 History",
     "📄 Reports",
     "ℹ️ About"
 ])
 
+if run_test:
+    if not hosts:
+        st.error("Enter at least one valid hostname.")
+    else:
+        new_rows = []
+        progress = st.progress(0)
+
+        for index, host in enumerate(hosts):
+            with st.spinner(f"Testing {host}:{int(port)}..."):
+                row = test_host(
+                    host,
+                    int(port),
+                    int(attempts),
+                    float(timeout)
+                )
+                new_rows.append(row)
+
+            progress.progress((index + 1) / len(hosts))
+
+        progress.empty()
+
+        new_df = pd.DataFrame(new_rows, columns=COLUMNS)
+
+        st.session_state.results = pd.concat(
+            [st.session_state.results, new_df],
+            ignore_index=True
+        )
+
+        add_alerts(
+            new_rows, latency_limit, jitter_limit
+        )
+
+        st.success("Network tests completed.")
+
+df = st.session_state.results.copy()
+
+if not df.empty:
+    numeric_columns = [
+        "attempts", "successes", "failures",
+        "success_rate", "avg_latency", "min_latency",
+        "max_latency", "jitter"
+    ]
+
+    for column in numeric_columns:
+        df[column] = pd.to_numeric(
+            df[column], errors="coerce"
+        )
+
+
 with dashboard:
     st.subheader("Network dashboard")
-    st.write("Selected hosts:", ", ".join(hosts) or "None")
 
-    if st.button("▶ Run live test", type="primary"):
-        if not hosts:
-            st.error("Enter at least one hostname.")
-        elif any(not valid_host(host) for host in hosts):
-            st.error(
-                "Enter valid hostnames only, without https:// or paths."
-            )
-        else:
-            results = []
-            details = []
+    if df.empty:
+        st.info(
+            "Enter hostnames in the sidebar and click "
+            "'Run live test' to collect results."
+        )
+    else:
+        total_attempts = int(df["attempts"].fillna(0).sum())
+        total_successes = int(df["successes"].fillna(0).sum())
+        total_failures = int(df["failures"].fillna(0).sum())
 
-            progress = st.progress(0)
-
-            for index, host in enumerate(hosts):
-                result, detail = tcp_test(
-                    host, int(port), int(attempts), int(timeout)
-                )
-                save_result(result)
-                results.append(result)
-                detail.insert(0, "Host", host)
-                details.append(detail)
-                progress.progress((index + 1) / len(hosts))
-
-            st.session_state["results"] = pd.DataFrame(results)
-            st.session_state["details"] = pd.concat(
-                details, ignore_index=True
-            )
-            st.success("Tests completed and results saved.")
-
-    if "results" in st.session_state:
-        df = st.session_state["results"]
-
-        total_attempts = int(df["attempts"].sum())
-        total_successes = int(df["successes"].sum())
-        overall_rate = (
+        success_rate = (
             total_successes / total_attempts * 100
             if total_attempts else 0
         )
 
         valid_latency = df["avg_latency"].dropna()
-        overall_latency = (
-            valid_latency.mean() if not valid_latency.empty else None
+        avg_latency = (
+            valid_latency.mean()
+            if not valid_latency.empty else None
         )
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Hosts tested", len(df))
-        c2.metric("Success rate", f"{overall_rate:.1f}%")
+
+        c1.metric("Host tests", len(df))
+        c2.metric("Success rate", f"{success_rate:.1f}%")
         c3.metric(
             "Average connection time",
-            f"{overall_latency:.2f} ms"
-            if overall_latency is not None else "N/A"
+            f"{avg_latency:.2f} ms"
+            if avg_latency is not None else "N/A"
         )
-        c4.metric(
-            "Average health score",
-            f"{df['health_score'].mean():.1f}/100"
+        c4.metric("Failed probes", total_failures)
+
+        c5, c6, c7 = st.columns(3)
+
+        c5.metric("Successful probes", total_successes)
+
+        valid_jitter = df["jitter"].dropna()
+        avg_jitter = (
+            valid_jitter.mean()
+            if not valid_jitter.empty else None
         )
 
-        st.subheader("Latest results")
-        st.dataframe(df, use_container_width=True, hide_index=True)
-
-        chart_df = df.set_index("host")
-        left, right = st.columns(2)
-
-        with left:
-            st.markdown("**Average TCP connection time (ms)**")
-            st.bar_chart(chart_df[["avg_latency"]])
-
-        with right:
-            st.markdown("**Connection success rate (%)**")
-            st.bar_chart(chart_df[["success_rate"]])
-
-        st.markdown("**Jitter proxy (ms)**")
-        st.bar_chart(chart_df[["jitter"]])
-
-        st.subheader("⚠️ Alerts")
-        for _, row in df.iterrows():
-            alerts = []
-
-            if row["failures"] > 0:
-                alerts.append(f"{int(row['failures'])} failed attempts")
-
-            if (
-                pd.notna(row["avg_latency"])
-                and row["avg_latency"] > latency_limit
-            ):
-                alerts.append("latency above threshold")
-
-            if (
-                pd.notna(row["jitter"])
-                and row["jitter"] > jitter_limit
-            ):
-                alerts.append("jitter proxy above threshold")
-
-            if alerts:
-                st.warning(f"{row['host']}: " + ", ".join(alerts))
-            else:
-                st.success(f"{row['host']}: no configured alerts")
-
-        with st.expander("Attempt-by-attempt diagnostics"):
-            st.dataframe(
-                st.session_state["details"],
-                use_container_width=True,
-                hide_index=True
-            )
-    else:
-        st.info("Run a test to display live measurements.")
-
-with diagnostics:
-    st.subheader("DNS and TCP diagnostics")
-    diagnostic_host = st.text_input(
-        "Hostname to diagnose", value="google.com"
-    )
-    diagnostic_port = st.number_input(
-        "Diagnostic port",
-        min_value=1,
-        max_value=65535,
-        value=443,
-        key="diagnostic_port"
-    )
-
-    if st.button("Run diagnostics"):
-        if not valid_host(diagnostic_host.strip()):
-            st.error("Enter a valid hostname.")
-        else:
-            addresses, dns_ms, dns_error = dns_diagnostic(
-                diagnostic_host.strip()
-            )
-            st.metric("DNS lookup time", f"{dns_ms:.2f} ms")
-
-            if addresses:
-                st.write("Resolved IP addresses:")
-                st.code("\n".join(addresses))
-            else:
-                st.error(f"DNS lookup failed: {dns_error}")
-
-            start = time.perf_counter()
-            try:
-                with socket.create_connection(
-                    (diagnostic_host.strip(), int(diagnostic_port)),
-                    timeout=int(timeout)
-                ):
-                    elapsed = (time.perf_counter() - start) * 1000
-                st.success(
-                    f"TCP connection succeeded in {elapsed:.2f} ms."
-                )
-            except OSError as exc:
-                st.error(f"TCP connection failed: {exc}")
-
-with history_tab:
-    st.subheader("Saved test history")
-    history_df = load_history()
-
-    if history_df.empty:
-        st.info("No saved results yet. Run a live test first.")
-    else:
-        options = sorted(history_df["host"].dropna().unique())
-        selected = st.multiselect(
-            "Filter hosts", options, default=options
+        c6.metric(
+            "Latency variation",
+            f"{avg_jitter:.2f} ms"
+            if avg_jitter is not None else "N/A"
         )
-        filtered = history_df[
-            history_df["host"].isin(selected)
-        ]
+
+        c7.metric(
+            "Alerts recorded",
+            len(st.session_state.alerts)
+        )
+
+        st.markdown("### Latest result per host")
+
+        latest = df.drop_duplicates(
+            subset=["host", "port"], keep="last"
+        )
 
         st.dataframe(
-            filtered, use_container_width=True, hide_index=True
-        )
-
-        if not filtered.empty:
-            trend = filtered.sort_values("tested_at").set_index(
-                "tested_at"
-            )
-            st.markdown("**Historical average connection time (ms)**")
-            st.line_chart(trend[["avg_latency"]])
-            st.markdown("**Historical success rate (%)**")
-            st.line_chart(trend[["success_rate"]])
-
-with reports:
-    st.subheader("Reports and exports")
-    report_df = load_history()
-
-    if report_df.empty:
-        st.info("Run a test before exporting a report.")
-    else:
-        st.download_button(
-            "⬇ Download history as CSV",
-            data=report_df.to_csv(index=False).encode("utf-8"),
-            file_name="netqos_history.csv",
-            mime="text/csv",
-            type="primary"
-        )
-        st.dataframe(
-            report_df.head(20),
+            latest,
             use_container_width=True,
             hide_index=True
         )
 
-with about:
-    st.subheader("About this project")
-    st.markdown("""
-    **NetQoS Monitor** is a Python and Streamlit network monitoring app.
+        chart_df = df.dropna(subset=["avg_latency"])
 
-    - TCP connection time: time required to establish a TCP connection.
-    - Success rate: successful connections divided by total attempts.
-    - Jitter proxy: average change between consecutive successful
-      connection-time samples.
-    - Health score: a custom illustrative score, not an official
-      QoS standard.
-    - DNS diagnostics: checks hostname resolution and timing.
-    - History and reports: stores results in SQLite and exports CSV.
+        if not chart_df.empty:
+            st.markdown("### Average TCP connection time")
+            st.bar_chart(
+                chart_df.set_index("timestamp")["avg_latency"]
+            )
+
+            st.markdown("### Success rate")
+            st.line_chart(
+                df.set_index("timestamp")["success_rate"]
+            )
+
+        st.markdown("### Alerts")
+
+        alerts_df = pd.DataFrame(st.session_state.alerts)
+
+        if alerts_df.empty:
+            st.success("No alerts have been recorded.")
+        else:
+            st.dataframe(
+                alerts_df.iloc[::-1],
+                use_container_width=True,
+                hide_index=True
+            )
+
+
+with diagnostics:
+    st.subheader("Connection diagnostics")
+
+    if df.empty:
+        st.info("Run a live test first.")
+    else:
+        latest = df.drop_duplicates(
+            subset=["host", "port"], keep="last"
+        )
+
+        for _, row in latest.iterrows():
+            with st.expander(
+                f"{row['host']}:{int(row['port'])} — {row['status']}"
+            ):
+                st.write("**Result:**", row["message"])
+                st.write(
+                    f"**Success rate:** {row['success_rate']:.1f}%"
+                )
+
+                if pd.notna(row["avg_latency"]):
+                    st.write(
+                        f"**Average TCP connection time:** "
+                        f"{row['avg_latency']:.2f} ms"
+                    )
+
+                if row["status"] == "Down":
+                    st.error(
+                        "All attempts failed. Check the hostname, "
+                        "port, DNS resolution, and service availability."
+                    )
+                elif row["status"] == "Warning":
+                    st.warning(
+                        "Some attempts failed. Run another test "
+                        "and compare the results."
+                    )
+                else:
+                    st.success(
+                        "All probes succeeded in this test."
+                    )
+
+
+with history:
+    st.subheader("Test history")
+
+    if df.empty:
+        st.info("No test history yet.")
+    else:
+        options = [
+            "All hosts"
+        ] + sorted(df["host"].dropna().unique().tolist())
+
+        chosen_host = st.selectbox(
+            "Filter by host", options
+        )
+
+        rows_to_show = st.selectbox(
+            "Number of rows",
+            ["10", "25", "50", "100", "All"]
+        )
+
+        filtered = df
+
+        if chosen_host != "All hosts":
+            filtered = filtered[
+                filtered["host"] == chosen_host
+            ]
+
+        filtered = filtered.iloc[::-1]
+
+        if rows_to_show != "All":
+            filtered = filtered.head(int(rows_to_show))
+
+        st.dataframe(
+            filtered,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        if st.button("Clear session history"):
+            st.session_state.results = pd.DataFrame(
+                columns=COLUMNS
+            )
+            st.session_state.alerts = []
+            st.rerun()
+
+
+with reports:
+    st.subheader("Reports and CSV export")
+
+    if df.empty:
+        st.info("Run a test before generating a report.")
+    else:
+        summary = df.groupby(
+            "host", as_index=False
+        ).agg(
+            tests=("host", "count"),
+            attempts=("attempts", "sum"),
+            successes=("successes", "sum"),
+            failures=("failures", "sum"),
+            mean_success_rate=("success_rate", "mean"),
+            mean_latency_ms=("avg_latency", "mean"),
+            mean_jitter_ms=("jitter", "mean")
+        )
+
+        st.markdown("### Summary by host")
+        st.dataframe(
+            summary.round(2),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.download_button(
+            "⬇ Download test history CSV",
+            data=df.to_csv(index=False).encode("utf-8"),
+            file_name="netqos_history.csv",
+            mime="text/csv"
+        )
+
+        alerts_df = pd.DataFrame(st.session_state.alerts)
+
+        if not alerts_df.empty:
+            st.markdown("### Alert report")
+
+            st.dataframe(
+                alerts_df,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.download_button(
+                "⬇ Download alerts CSV",
+                data=alerts_df.to_csv(index=False).encode("utf-8"),
+                file_name="netqos_alerts.csv",
+                mime="text/csv"
+            )
+
+
+with about:
+    st.subheader("About NetQoS Monitor")
+
+    st.markdown("""
+    **Purpose:** Monitor TCP connection availability and summarize
+    connection-time measurements for selected hosts.
+
+    **Features**
+    - Multiple-host testing
+    - Configurable port, attempt count, and timeout
+    - Success and failure statistics
+    - Average, minimum, and maximum connection times
+    - Latency-variation proxy
+    - Threshold-based alerts
+    - Diagnostics and test history
+    - CSV reports
+
+    **Limitations**
+    - Tests originate from the Streamlit cloud server, not directly
+      from the visitor's laptop or Wi-Fi.
+    - TCP connection time is not ICMP ping round-trip time.
+    - The jitter value is a simple variation proxy, not a formal
+      standards-based jitter measurement.
+    - History is stored in session memory and may reset when the
+      app or session restarts.
     """)
 
-    st.warning(
-        "This app does not measure true ICMP ping RTT or directly "
-        "measure your laptop's Wi-Fi. Cloud-hosted SQLite history may "
-        "not survive a server restart or redeployment."
-    )
+with st.sidebar:
+    st.divider()
+    st.caption("NetQoS Monitor • Student mini-project")
+    st.caption(f"Rows in current session: {len(df)}")
