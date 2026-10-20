@@ -5,7 +5,6 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-# ---------- Page setup ----------
 st.set_page_config(
     page_title="NetQoS Monitor",
     page_icon="📡",
@@ -13,56 +12,149 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ---------- Custom dark theme ----------
+# -------------------- PROFESSIONAL DARK THEME --------------------
 st.markdown("""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+:root {
+    --bg: #070b13;
+    --panel: #101b2b;
+    --cyan: #67e8f9;
+    --text: #edf6ff;
+    --muted: #9aacc0;
+}
+
+html, body, [class*="css"] {
+    font-family: 'DM Sans', sans-serif;
+}
+
 .stApp {
-    background: radial-gradient(ellipse at top left,
-        rgba(8,145,178,.16), transparent 40%), #070b14;
-    color: #eaf3fb;
+    color: var(--text);
+    background:
+        radial-gradient(ellipse at 10% 0%, #102b3a 0%, transparent 35%),
+        #070b13;
 }
+
 [data-testid="stSidebar"] {
-    background: #0a1220;
-    border-right: 1px solid #20364a;
+    background: linear-gradient(180deg, #101b2b, #080e18);
+    border-right: 1px solid #24374a;
 }
+
+.block-container {
+    max-width: 1450px;
+    padding-top: 2rem;
+    padding-bottom: 3rem;
+}
+
+h1, h2, h3 {
+    font-family: 'Space Grotesk', sans-serif !important;
+    letter-spacing: -0.03em;
+}
+
 .hero {
-    padding: 28px;
-    border-radius: 18px;
-    border: 1px solid rgba(103,232,249,.3);
-    background: linear-gradient(135deg,#102137,#09111e);
-    box-shadow: 0 0 28px rgba(6,182,212,.08);
-    margin-bottom: 22px;
+    padding: 30px;
+    margin-bottom: 24px;
+    border-radius: 22px;
+    border: 1px solid #285064;
+    background: linear-gradient(120deg, #112639, #0b1320);
+    box-shadow: 0 12px 40px #0005;
+    animation: fadeIn .6s ease-out;
 }
+
 .eyebrow {
-    color: #67e8f9;
-    letter-spacing: 3px;
-    font-size: 12px;
-    font-weight: bold;
+    color: var(--cyan);
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
 }
+
+.hero h1 {
+    font-size: clamp(2rem, 4vw, 3.2rem);
+    margin: 12px 0;
+}
+
+.hero p {
+    color: var(--muted);
+    font-size: 1rem;
+}
+
+.section-label {
+    color: var(--cyan);
+    font-size: .76rem;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    margin: 25px 0 12px;
+}
+
 div[data-testid="stMetric"] {
-    background: #101d30;
-    border: 1px solid #20364a;
-    padding: 16px;
-    border-radius: 14px;
+    background: linear-gradient(145deg, #142438, #0c1522);
+    border: 1px solid #263c50;
+    border-radius: 16px;
+    padding: 18px;
+    transition: transform .2s ease, border-color .2s ease;
 }
-div[data-testid="stMetricValue"] { color: #67e8f9; }
-div.stButton > button, div.stDownloadButton > button {
-    border-radius: 10px;
-    border: 1px solid #38bdf8;
+
+div[data-testid="stMetric"]:hover {
+    transform: translateY(-3px);
+    border-color: var(--cyan);
+}
+
+div[data-testid="stMetricLabel"] {
+    color: var(--muted);
+}
+
+div[data-testid="stMetricValue"] {
+    color: var(--text);
+    font-family: 'Space Grotesk', sans-serif;
+}
+
+.stButton > button,
+.stDownloadButton > button {
+    min-height: 44px;
+    border-radius: 11px;
+    border: 1px solid #397087;
+    font-weight: 600;
     transition: all .2s ease;
 }
-div.stButton > button:hover, div.stDownloadButton > button:hover {
-    box-shadow: 0 0 18px rgba(103,232,249,.25);
-    transform: translateY(-2px);
+
+.stButton > button[kind="primary"] {
+    background: linear-gradient(100deg, #67e8f9, #22d3ee);
+    color: #06121c;
+    border: none;
+    box-shadow: 0 4px 22px #22d3ee22;
 }
-@keyframes glow {
-    from { opacity: .55; }
-    to { opacity: 1; }
+
+.stButton > button:hover,
+.stDownloadButton > button:hover {
+    border-color: var(--cyan);
+    box-shadow: 0 0 18px #22d3ee25;
 }
-.glow {
-    color: #67e8f9;
-    animation: glow 2s ease-in-out infinite alternate;
+
+.stTextArea textarea,
+.stTextInput input {
+    background: #0b1625;
+    border-color: #2b4258;
+    border-radius: 10px;
 }
+
+[data-testid="stDataFrame"] {
+    border: 1px solid #263c50;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+hr {
+    border-color: #263747;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         animation: none !important;
@@ -72,17 +164,53 @@ div.stButton > button:hover, div.stDownloadButton > button:hover {
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- Session history ----------
+
+# -------------------- SESSION HISTORY --------------------
 if "results" not in st.session_state:
     st.session_state.results = []
 
 
-def test_tcp(host, port, timeout):
-    """Measure TCP connection time from the app server."""
-    started = time.perf_counter()
+# -------------------- NETWORK FUNCTIONS --------------------
+def parse_hosts(raw):
+    hosts = []
+    errors = []
+
+    for line_no, line in enumerate(raw.splitlines(), 1):
+        item = line.strip()
+
+        if not item or item.startswith("#"):
+            continue
+
+        try:
+            if "://" in item or "/" in item or any(c.isspace() for c in item):
+                raise ValueError("Enter a hostname or hostname:port, not a URL.")
+
+            if item.count(":") > 1:
+                raise ValueError("Use hostname:port format.")
+
+            if ":" in item:
+                host, port_text = item.rsplit(":", 1)
+                port = int(port_text)
+            else:
+                host, port = item, 443
+
+            if not host or not 1 <= port <= 65535:
+                raise ValueError("Port must be between 1 and 65535.")
+
+            hosts.append((host, port))
+
+        except ValueError as exc:
+            errors.append(f"Line {line_no}: {exc}")
+
+    # Remove duplicates while preserving order.
+    return list(dict.fromkeys(hosts)), errors
+
+
+def tcp_probe(host, port, timeout):
     timestamp = datetime.now().astimezone().isoformat(
         timespec="seconds"
     )
+    started = time.perf_counter()
 
     try:
         with socket.create_connection(
@@ -96,79 +224,56 @@ def test_tcp(host, port, timeout):
             "Port": port,
             "Status": "Success",
             "Connect time (ms)": round(elapsed, 2),
-            "Error": "",
+            "Details": "",
         }
 
     except (socket.timeout, TimeoutError):
         elapsed = (time.perf_counter() - started) * 1000
+
         return {
             "Time": timestamp,
             "Host": host,
             "Port": port,
             "Status": "Timeout",
             "Connect time (ms)": round(elapsed, 2),
-            "Error": f"Timed out after {timeout}s",
+            "Details": f"Timed out after {timeout:.1f} seconds",
         }
 
     except OSError as exc:
         elapsed = (time.perf_counter() - started) * 1000
+
         return {
             "Time": timestamp,
             "Host": host,
             "Port": port,
             "Status": "Failed",
             "Connect time (ms)": round(elapsed, 2),
-            "Error": str(exc)[:150],
+            "Details": str(exc)[:160],
         }
 
 
-def parse_hosts(text):
-    hosts = []
-    errors = []
-
-    for number, line in enumerate(text.splitlines(), 1):
-        item = line.strip()
-
-        if not item or item.startswith("#"):
-            continue
-
-        try:
-            if "://" in item or "/" in item or " " in item:
-                raise ValueError(
-                    "Enter a hostname, not a URL."
-                )
-
-            if item.count(":") > 1:
-                raise ValueError(
-                    "IPv6 input is not supported here."
-                )
-
-            if ":" in item:
-                host, port_text = item.rsplit(":", 1)
-                port = int(port_text)
-            else:
-                host, port = item, 443
-
-            if not host or not 1 <= port <= 65535:
-                raise ValueError("Invalid host or port.")
-
-            hosts.append((host, port))
-
-        except ValueError as exc:
-            errors.append(f"Line {number}: {exc}")
-
-    return list(dict.fromkeys(hosts)), errors
+def section(title):
+    st.markdown(
+        f'<div class="section-label">{title}</div>',
+        unsafe_allow_html=True,
+    )
 
 
-# ---------- Sidebar ----------
+# -------------------- SIDEBAR --------------------
 with st.sidebar:
-    st.markdown("## 📡 NetQoS Monitor")
+    st.markdown(
+        '<h2 style="color:#67e8f9">📡 NETQOS</h2>'
+        '<p style="margin-top:-12px">NETWORK MONITOR</p>',
+        unsafe_allow_html=True,
+    )
+
     page = st.radio(
         "Navigation",
         ["Dashboard", "Diagnostics", "History & Reports", "About"],
     )
 
     st.divider()
+    st.markdown("### Test settings")
 
     timeout = st.slider(
         "Connection timeout (seconds)",
@@ -186,110 +291,139 @@ with st.sidebar:
         step=25,
     )
 
-    if st.button("Clear session history"):
+    st.caption("Thresholds are configurable indicators.")
+
+    if st.button("Clear session history", use_container_width=True):
         st.session_state.results = []
         st.rerun()
 
+    st.divider()
+    st.caption("Network diagnostics for learning and demonstration.")
 
-# ---------- Header ----------
+
+# -------------------- HERO HEADER --------------------
 st.markdown("""
 <div class="hero">
-    <div class="eyebrow">NETWORK OBSERVABILITY</div>
-    <h1>NetQoS <span style="color:#67e8f9">Monitor</span></h1>
-    <p>TCP diagnostics, connection-time analytics and reports.</p>
-    <span class="glow">● Monitoring workspace</span>
+    <div class="eyebrow">Network intelligence · TCP diagnostics</div>
+    <h1>See your network <span style="color:#67e8f9">clearly.</span></h1>
+    <p>
+        Test endpoint reachability, measure TCP connection times,
+        and review your results in one clean dashboard.
+    </p>
 </div>
 """, unsafe_allow_html=True)
 
-st.info(
-    "Tests run from the server hosting this app, not directly "
-    "from your laptop or Wi-Fi. These are TCP connection checks, "
-    "not ICMP ping tests."
+st.caption(
+    "Important: tests run from the Streamlit hosting server, "
+    "not directly from your laptop or local Wi-Fi. "
+    "TCP connection time is not the same as ICMP ping."
 )
 
-history = pd.DataFrame(st.session_state.results)
 
-if history.empty:
-    history = pd.DataFrame(columns=[
-        "Time", "Host", "Port", "Status",
-        "Connect time (ms)", "Error"
-    ])
+# -------------------- PREPARE DATA --------------------
+columns = [
+    "Time", "Host", "Port", "Status",
+    "Connect time (ms)", "Details"
+]
 
-success = history[history["Status"] == "Success"]
-total = len(history)
-success_count = len(success)
-failure_count = total - success_count
-success_rate = success_count / total * 100 if total else 0
-average = (
-    success["Connect time (ms)"].mean()
+df = pd.DataFrame(
+    st.session_state.results,
+    columns=columns,
+)
+
+success_df = df[df["Status"] == "Success"]
+total = len(df)
+success_count = len(success_df)
+failed_count = total - success_count
+
+success_rate = (
+    success_count / total * 100 if total else 0
+)
+
+average_time = (
+    success_df["Connect time (ms)"].mean()
     if success_count else None
 )
 
-# ---------- Dashboard ----------
+
+# -------------------- DASHBOARD --------------------
 if page == "Dashboard":
-    st.subheader("Performance overview")
+    section("Network overview")
 
-    a, b, c, d = st.columns(4)
-    a.metric("Total checks", total)
-    b.metric("Success rate", f"{success_rate:.1f}%")
-    c.metric(
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("Total checks", f"{total:,}")
+    c2.metric("Success rate", f"{success_rate:.1f}%")
+    c3.metric(
         "Average TCP time",
-        f"{average:.2f} ms" if average is not None else "—",
+        f"{average_time:.2f} ms" if average_time is not None else "—",
     )
-    d.metric("Failures", failure_count)
+    c4.metric("Failed checks", f"{failed_count:,}")
 
-    left, right = st.columns(2)
+    chart_col, status_col = st.columns([1.5, 1])
 
-    with left:
-        st.markdown("### Connection-time trend")
+    with chart_col:
+        section("Connection performance")
 
         if success_count:
-            chart = success.copy()
-            chart["Time"] = pd.to_datetime(
-                chart["Time"], errors="coerce"
+            chart_df = success_df.copy()
+            chart_df["Time"] = pd.to_datetime(
+                chart_df["Time"], errors="coerce"
             )
-            chart = chart.dropna(subset=["Time"])
-            chart = chart.sort_values("Time")
+            chart_df = chart_df.dropna(subset=["Time"])
+            chart_df = chart_df.sort_values("Time")
 
-            if not chart.empty:
+            if not chart_df.empty:
                 st.line_chart(
-                    chart.set_index("Time")["Connect time (ms)"]
+                    chart_df.set_index("Time")["Connect time (ms)"],
+                    height=280,
                 )
         else:
-            st.caption(
-                "Run diagnostics to see connection-time trends."
+            st.info(
+                "Your performance chart will appear "
+                "after you run your first test."
             )
 
-    with right:
-        st.markdown("### Check status")
+    with status_col:
+        section("Connection status")
 
         if total:
-            st.bar_chart(history["Status"].value_counts())
+            st.bar_chart(
+                df["Status"].value_counts(),
+                height=280,
+            )
         else:
-            st.caption("No test results yet.")
+            st.info("Run diagnostics to see your results here.")
 
-    st.markdown("### Recent results")
+    section("Recent activity")
 
     if total:
         st.dataframe(
-            history.tail(10).iloc[::-1],
+            df.tail(10).iloc[::-1],
             use_container_width=True,
             hide_index=True,
         )
     else:
-        st.write("Open Diagnostics to run your first test.")
+        st.write(
+            "Choose **Diagnostics** in the sidebar "
+            "to test your first endpoint."
+        )
 
 
-# ---------- Diagnostics ----------
+# -------------------- DIAGNOSTICS --------------------
 elif page == "Diagnostics":
-    st.subheader("TCP connectivity diagnostics")
+    section("Test your endpoints")
+
+    st.write(
+        "Enter one hostname per line. You can specify a port "
+        "with `hostname:port`. If you omit the port, 443 is used."
+    )
 
     raw_hosts = st.text_area(
-        "Hosts — enter one per line",
+        "Target endpoints",
         value="example.com:443\ngithub.com:443\nstreamlit.io:443",
         height=130,
-        help="You can enter hostname:port or hostname alone. "
-             "Port 443 is used when no port is specified.",
+        label_visibility="collapsed",
     )
 
     hosts, errors = parse_hosts(raw_hosts)
@@ -297,89 +431,112 @@ elif page == "Diagnostics":
     for error in errors:
         st.warning(error)
 
-    st.caption(
-        f"{len(hosts)} valid unique target(s). "
-        "Maximum 20 targets per run."
+    left, right = st.columns([1, 2])
+
+    with left:
+        st.metric("Valid targets", len(hosts))
+
+    with right:
+        st.caption(
+            "Maximum 20 targets per run. Only test systems "
+            "you are authorized to assess."
+        )
+
+    run_test = st.button(
+        "▶ Run Live Test",
+        type="primary",
+        use_container_width=True,
+        disabled=not hosts,
     )
 
-    if st.button(
-        "▶ Run diagnostics",
-        type="primary",
-        disabled=not hosts,
-    ):
+    if run_test:
         if len(hosts) > 20:
-            st.error("Please test no more than 20 hosts per run.")
+            st.error("Please enter no more than 20 targets.")
         else:
             progress = st.progress(0)
             new_results = []
 
-            for i, (host, port) in enumerate(hosts, 1):
+            for index, (host, port) in enumerate(hosts, start=1):
                 progress.progress(
-                    (i - 1) / len(hosts),
-                    text=f"Testing {host}:{port}...",
+                    (index - 1) / len(hosts),
+                    text=f"Testing {host}:{port}",
                 )
 
-                result = test_tcp(host, port, timeout)
+                result = tcp_probe(host, port, timeout)
                 new_results.append(result)
 
-                progress.progress(i / len(hosts))
+                progress.progress(
+                    index / len(hosts),
+                    text=f"Completed {index} of {len(hosts)}",
+                )
 
             st.session_state.results.extend(new_results)
             progress.empty()
-            st.success(f"Completed {len(new_results)} checks.")
+            st.success(f"Completed {len(new_results)} TCP checks.")
             st.rerun()
 
+    # Show the most recent batch of results.
     if total:
-        st.markdown("### Results")
+        section("Test results")
+
         st.dataframe(
-            history.tail(max(1, len(hosts))).iloc[::-1],
+            df.tail(len(hosts) if hosts else 10).iloc[::-1],
             use_container_width=True,
             hide_index=True,
         )
 
-        slow = success[
-            success["Connect time (ms)"] >= threshold
+        slow_df = success_df[
+            success_df["Connect time (ms)"] >= threshold
         ]
 
-        if failure_count:
+        if failed_count:
             st.warning(
-                f"{failure_count} failed or timed-out checks "
-                "are in your session history."
+                f"{failed_count} failed or timed-out check(s) "
+                "exist in the session history."
             )
 
-        if len(slow):
+        if len(slow_df):
             st.warning(
-                f"{len(slow)} successful connection(s) met or "
-                f"exceeded the {threshold} ms threshold."
+                f"{len(slow_df)} successful connection(s) "
+                f"met or exceeded the {threshold} ms threshold."
             )
 
 
-# ---------- Reports ----------
+# -------------------- HISTORY AND REPORTS --------------------
 elif page == "History & Reports":
-    st.subheader("History & reports")
+    section("History and reports")
 
-    if history.empty:
+    if df.empty:
         st.info(
-            "No history yet. Run diagnostics first. "
-            "History is temporary and may reset when the app restarts."
+            "No test records yet. Run diagnostics first. "
+            "Session history may reset when the app restarts."
         )
+
     else:
-        selected_hosts = st.multiselect(
-            "Filter by host",
-            sorted(history["Host"].unique()),
-            default=sorted(history["Host"].unique()),
-        )
+        col1, col2 = st.columns(2)
 
-        selected_status = st.multiselect(
-            "Filter by status",
-            sorted(history["Status"].unique()),
-            default=sorted(history["Status"].unique()),
-        )
+        with col1:
+            selected_hosts = st.multiselect(
+                "Filter by host",
+                options=sorted(df["Host"].unique()),
+                default=sorted(df["Host"].unique()),
+            )
 
-        filtered = history[
-            history["Host"].isin(selected_hosts)
-            & history["Status"].isin(selected_status)
+        with col2:
+            selected_statuses = st.multiselect(
+                "Filter by status",
+                options=sorted(df["Status"].unique()),
+                default=sorted(df["Status"].unique()),
+            )
+
+        filtered = df[
+            df["Host"].isin(selected_hosts)
+            & df["Status"].isin(selected_statuses)
         ]
+
+        st.caption(
+            f"Showing {len(filtered)} of {len(df)} records."
+        )
 
         st.dataframe(
             filtered.iloc[::-1],
@@ -387,50 +544,66 @@ elif page == "History & Reports":
             hide_index=True,
         )
 
-        st.download_button(
-            "⬇ Download filtered CSV",
-            data=filtered.to_csv(index=False).encode("utf-8"),
-            file_name="netqos_filtered_report.csv",
-            mime="text/csv",
-        )
+        d1, d2 = st.columns(2)
 
-        st.download_button(
-            "⬇ Download all history CSV",
-            data=history.to_csv(index=False).encode("utf-8"),
-            file_name="netqos_history.csv",
-            mime="text/csv",
-        )
+        with d1:
+            st.download_button(
+                "⬇ Download filtered CSV",
+                data=filtered.to_csv(index=False).encode("utf-8"),
+                file_name="netqos_filtered.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+        with d2:
+            st.download_button(
+                "⬇ Download all CSV",
+                data=df.to_csv(index=False).encode("utf-8"),
+                file_name="netqos_history.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
 
 
-# ---------- About ----------
+# -------------------- ABOUT --------------------
 else:
-    st.subheader("About NetQoS Monitor")
+    section("About NetQoS Monitor")
 
-    st.markdown("""
-NetQoS Monitor is a learning project for network diagnostics
-and basic connection-performance reporting.
+    st.write(
+        "NetQoS Monitor is an educational network diagnostics "
+        "dashboard for checking TCP endpoint reachability "
+        "and reviewing connection-time measurements."
+    )
 
-**Features**
-- TCP connection tests for hosts and ports
-- Connection time measured in milliseconds
-- Success, timeout and failure status
-- Connection-time charts and summary metrics
-- Filterable history and CSV downloads
-- Configurable slow-connection threshold
+    left, right = st.columns(2)
 
-**Important measurement notes**
-- TCP connection time is measured from the app server.
-- It is not ICMP ping, packet loss, or a direct measurement
-  of your laptop's Wi-Fi.
-- History is stored in session memory and may reset.
-- A successful TCP connection does not guarantee that the
-  entire website or service is healthy.
-""")
+    with left:
+        st.subheader("Features")
+        st.markdown("""
+        - TCP connectivity testing
+        - Success, failure and timeout reporting
+        - Connection-time charts
+        - Configurable slow-connection threshold
+        - Filterable history
+        - CSV report downloads
+        """)
+
+    with right:
+        st.subheader("Technical notes")
+        st.markdown("""
+        - Tests originate from the hosting server
+        - TCP connection time is not ICMP ping
+        - This does not directly measure local Wi-Fi
+        - History is temporary session data
+        - TCP reachability does not guarantee application health
+        """)
 
     st.markdown("**Built with:** Python · Streamlit · pandas")
 
+
+# -------------------- FOOTER --------------------
 st.divider()
+
 st.caption(
-    "NetQoS Monitor · Educational diagnostics tool · "
-    "Only test systems you are authorized to assess."
+    "NETQOS MONITOR  ·  Network diagnostics for learning and demonstration"
 )
