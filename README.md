@@ -6,6 +6,24 @@ NetQoS Monitor is a web-based network diagnostics application built using Python
 
 🚀 Live Demo: https://netqos-monitor-b9zuqm5fav6qnutulp39bk.streamlit.app/
 
+🚀 NetQoS Developer Portal
+
+Welcome to NetQoS Monitor — an interactive network diagnostics dashboard built with Python and Streamlit.
+
+Explore TCP connectivity, measure connection establishment times, and visualize network test results.
+
+🌐 Launch the Web App
+
+➡️ OPEN NETQOS MONITOR — LIVE DEMO
+
+🛠️ Developer Features
+
+* TCP endpoint connectivity testing
+* Connection-time performance charts
+* Network status overview and KPI cards
+* Test history and CSV report downloads
+* Configurable timeout and slow-connection thresholds
+
 ✨ Features
 
 * 📊 Interactive Dashboard — View network diagnostic results in a clean interface.
