@@ -6,10 +6,10 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(
-page_title=“NetQoS Monitor”,
-page_icon=“📡”,
-layout=“wide”,
-initial_sidebar_state=“expanded”,
+page_title="NetQoS Monitor",
+page_icon="📡",
+layout="wide",
+initial_sidebar_state="expanded",
 )
 
 –––––––––– PROFESSIONAL DARK THEME ––––––––––
